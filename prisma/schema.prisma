@@ -1,0 +1,281 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  MANAGER
+  SALES
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LeadSource {
+  META_ADS
+  ORGANIC
+  REFERRAL
+  LEAD
+  ADS
+}
+
+enum LeadStatus {
+  NEW
+  WARM
+  HOLD
+  REFUSED
+  CONVERTED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  PARTIAL
+  OVERDUE
+  VOID
+}
+
+enum PaymentMode {
+  UPI
+  BANK
+  CASH
+  CHEQUE
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+// ─── Models ───────────────────────────────────────────────────
+
+model User {
+  id            Int        @id @default(autoincrement())
+  name          String
+  email         String     @unique
+  passwordHash  String
+  role          Role
+  status        UserStatus @default(ACTIVE)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  leadsAssigned   Lead[]         @relation("AssignedTo")
+  leadNotes       LeadNote[]
+  invoicesCreated Invoice[]      @relation("CreatedBy")
+  invoicesUpdated Invoice[]      @relation("UpdatedBy")
+  auditLogs       AuditLog[]
+  refreshTokens   RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique @db.VarChar(512)
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique @db.VarChar(512)
+  userId    Int
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("password_reset_tokens")
+}
+
+model Lead {
+  id                Int        @id @default(autoincrement())
+  source            LeadSource
+  date              DateTime
+  name              String
+  contactNumber     String
+  email             String?
+  businessInfo      String?    @db.Text
+  requiredService   String?
+  lastConversation  DateTime?
+  nextCall          DateTime?
+  status            LeadStatus @default(NEW)
+  proposalSent      Boolean    @default(false)
+  dealValue         Decimal?   @db.Decimal(12, 2)
+  followUp1         DateTime?
+  followUp2         DateTime?
+  followUp3         DateTime?
+  contactedById     Int?
+  contactedBy       User?      @relation("AssignedTo", fields: [contactedById], references: [id])
+  remarks           String?    @db.Text
+  convertedClientId Int?
+  convertedClient   Client?    @relation("ConvertedFrom", fields: [convertedClientId], references: [id])
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  notes LeadNote[]
+
+  @@map("leads")
+}
+
+model LeadNote {
+  id        Int      @id @default(autoincrement())
+  leadId    Int
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  note      String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@map("lead_notes")
+}
+
+model Client {
+  id             Int         @id @default(autoincrement())
+  clientCode     String      @unique
+  clientName     String
+  businessName   String?
+  phone          String
+  email          String?
+  city           String?
+  leadSource     LeadSource?
+  websiteUrl     String?
+  activeServices String?
+  packageAmount  Decimal?    @db.Decimal(12, 2)
+  startDate      DateTime?
+  nextDueDate    DateTime?
+  status         String      @default("ACTIVE")
+  totalPaid      Decimal     @default(0) @db.Decimal(12, 2)
+  remarks        String?     @db.Text
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  leadsConverted Lead[]    @relation("ConvertedFrom")
+  invoices       Invoice[]
+  ledger         Ledger[]
+
+  @@map("clients")
+}
+
+model Invoice {
+  id          Int           @id @default(autoincrement())
+  invoiceNo   String        @unique
+  clientId    Int
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  invoiceDate DateTime
+  dueDate     DateTime
+  status      InvoiceStatus @default(DRAFT)
+  subtotal    Decimal       @db.Decimal(12, 2)
+  discount    Decimal       @default(0) @db.Decimal(12, 2)
+  tax         Decimal       @default(0) @db.Decimal(12, 2)
+  total       Decimal       @db.Decimal(12, 2)
+  notes       String?       @db.Text
+  createdById Int
+  createdBy   User          @relation("CreatedBy", fields: [createdById], references: [id])
+  updatedById Int?
+  updatedBy   User?         @relation("UpdatedBy", fields: [updatedById], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  items  InvoiceItem[]
+  ledger Ledger[]
+
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          Int     @id @default(autoincrement())
+  invoiceId   Int
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  description String
+  qty         Decimal @db.Decimal(8, 2)
+  rate        Decimal @db.Decimal(12, 2)
+  amount      Decimal @db.Decimal(12, 2)
+
+  @@map("invoice_items")
+}
+
+model Ledger {
+  id            Int           @id @default(autoincrement())
+  clientId      Int
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  invoiceId     Int?
+  invoice       Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  service       String?
+  month         Int
+  year          Int
+  amount        Decimal       @db.Decimal(12, 2)
+  paymentDate   DateTime?
+  mode          PaymentMode?
+  paymentStatus PaymentStatus @default(PENDING)
+  balanceDue    Decimal       @db.Decimal(12, 2)
+  notes         String?       @db.Text
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("ledger")
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int?
+  user        User?    @relation(fields: [userId], references: [id])
+  action      String
+  entityType  String
+  entityId    String?
+  beforeValue Json?
+  afterValue  Json?
+  createdAt   DateTime @default(now())
+
+  @@map("audit_log")
+}
+
+model InvoiceCounter {
+  year    Int @id
+  lastSeq Int @default(0)
+
+  @@map("invoice_counter")
+}
+
+model CompanySettings {
+  id                      Int      @id @default(1)
+  logoUrl                 String?
+  companyName             String   @default("Devlofox Technologies LLP")
+  addressLine1            String?
+  addressLine2            String?
+  city                    String?
+  state                   String?
+  pincode                 String?
+  phone                   String?
+  email                   String?
+  website                 String?
+  bankAccountName         String?
+  bankAccountNo           String?
+  bankName                String?
+  ifsc                    String?
+  upiId                   String?
+  invoicePrefix           String   @default("INV")
+  invoiceStartNumber      Int      @default(1)
+  defaultPaymentTermsDays Int      @default(30)
+  gstin                   String?
+  gstPercent              Decimal  @default(18) @db.Decimal(5, 2)
+  reminderDaysBefore      Int      @default(3)
+  updatedAt               DateTime @updatedAt
+
+  @@map("company_settings")
+}
