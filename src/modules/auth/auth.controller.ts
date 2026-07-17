@@ -1,12 +1,12 @@
-import { Request, Response } from 'express';
+import { Request, Response, CookieOptions } from 'express';
 import * as authService from './auth.service';
 import { logger } from '../../config/logger';
 
 const REFRESH_COOKIE = 'dfx_refresh';
-const COOKIE_OPTIONS = {
+const COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: (process.env.NODE_ENV === 'production' ? 'none' : 'lax') as const,
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
 };
 
